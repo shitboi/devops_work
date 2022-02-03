@@ -1,0 +1,24 @@
+###setup puppet cert Autosign
+
+ping puppet
+vi /etc/hosts --- give.23 puppet alias
+ping puppet to confirm
+
+vi /etc/puppetlabs/puppet/autosgn.conf  --- add fqdn of appservers and jumpserver
+jump_host@stratos.xfusioncorp.com puppet
+stapp01@stratos.xfusioncorp.com
+stapp02@stratos.xfusioncorp.com
+stapp03@stratos.xfusioncorp.com
+
+
+systemctl status puppetserver; systemctl status puppetserver; systemctl status puppetserver
+puppetserver ca list --all
+
+
+do same for all appservers 
+vi /etc/hosts
+systemctl status puppet; systemctl status puppet; systemctl status puppet
+puppetserver ca list --all
+
+#jump host
+puppet agent -tv

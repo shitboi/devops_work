@@ -1,0 +1,44 @@
+---
+- name: Ansible replace
+  hosts: stapp01,stapp02,stapp03
+  become: yes
+  tasks:
+    - name: blog.txt replacement
+      replace:                         #this is the module name (below it are attr)
+        path: /opt/security/blog.txt
+        regexp: "xFusionCorp"
+        replace: "Nautilus"
+      when: inventory_hostname == "stapp01"
+
+    - name: story.txt replacement
+      replace:
+        path: /opt/security/story.txt
+        regexp: "Nautilus"
+        replace: "KodeKloud"
+      when: inventory_hostname == "stapp02"
+
+---
+- name: Ansible gather facts
+  hosts: stapp01,stapp02,stapp03
+  gather_facts: true
+  become: yes
+  become_method: sudo
+  tasks:
+    - name: create file with blockin
+      blockinfile:
+        create: yes
+        path: /root/facts.txt
+        block: |
+          Ansible managed node IP is {{  ansible_default_ipv4.address  }}
+
+    - name: install apache packages
+      package:
+        name: httpd
+
+    - name: file copy
+      shell: cp /root/facts.txt /var/www/html/index.html
+  
+    - name: ensure httpd is running
+      systemd:
+        name: httpd
+        state: restarted

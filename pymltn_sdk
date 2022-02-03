@@ -1,0 +1,173 @@
+import time
+from datetime import date
+from telnetlib import Telnet
+import subprocess
+import concurrent.futures
+import pandas as pd
+import config
+import os
+import sys
+
+# start = time.perf_counter()
+# file_name = f'Acceptance_Report_{date.today()}.xlsx'
+# cols=['IP','Acceptance','rau_status','sbl_status','rau_sw','sbl','AAA_Completed','licence_status','lic_mode']
+
+class Pymltn:
+    '''Pymltn is a class that comprises of several methods used in retrieving and configuring Minilink microwave items.\n\n    Methods include both read, write and parsing functions.'''
+
+    @staticmethod
+    def get_inventory():
+        '''This method takes no argument but requires that an hosts.txt file (containing device IPs) exists \n        in the same directory from which this module is run'''
+
+        results = []
+        not_aaa_enabled=[]
+        no_connectivity=[]
+        unknown_error=[]
+        auth_failure=[]
+        p1 = b'ser'
+        p2 = b'word'
+        p3 = b'>'
+        p4 = b'fig)#'
+
+#         verifify_comm = ['show version', 'show rl revision']
+
+        try:
+            with open(os.getcwd()+'/hosts.txt') as f:
+                hosts = set([i.strip() for i in f.readlines()])#...............check
+        except:
+            print('Error importing host file. Please, check if hosts.txt file exists in main directory')
+            sys.exit(1)
+        try:
+            with open(os.getcwd()+'/commands.txt') as f:
+                commands = [i.strip() for i in f.readlines()]
+        except:
+            print('Error importing commands file. Make sure commands.txt file exists in main directory')
+            sys.exit(2)
+        print(f'Audit in progress for: {len(hosts)} hosts ......')
+
+        def run_comm_aaa(host):
+            try:
+                s = Telnet(host)
+                s.read_until(p1)
+                s.write(config.RADIUS_USER)
+                s.read_until(p2)
+                s.write(config.RADIUS_PASS)
+
+                for comm in commands:
+                    s.write(comm.encode('ascii')+b'\n')
+#                     s.read_until(p3)
+                time.sleep(2)
+                s.write(b'exit\n')
+                data = s.read_all().decode()#.split('\r\n')
+#                 print(data.split('\n'))#..................................check2
+
+                if 'access refused' in data:
+                    not_aaa_enabled.append(host)
+                    return
+
+                else:
+                    results.append((host,True,data))
+                    return
+
+            except EOFError:
+                not_aaa_enabled.append(host)
+            except TimeoutError:
+                no_connectivity.append(host)
+            except Exception:
+                unknown_error.append(host)
+            return
+
+
+        def run_comm(host):
+            try:
+                s = Telnet(host)
+                s.read_until(p2)
+                s.write(config.MLTN_PASS)
+
+                for comm in commands:
+                    s.write(comm.encode('ascii')+b'\n')
+#                     s.read_until(p3)
+                time.sleep(2)
+                s.write(b'exit\n')
+                data = s.read_all().decode()#.split('\r\n')
+#                 print(data.split('\n'))#..................................check2
+
+                if 'access refused' in data:
+                    auth_failure.append(host)
+                    return
+
+                else:
+                    results.append((host,False,data))
+                    return
+
+            except Exception:
+                auth_failure.append(host)
+            return
+
+        with concurrent.futures.ThreadPoolExecutor(5) as executor:
+            res = executor.map(run_comm_aaa, hosts)
+            all_res = [i for i in res]
+
+        if not_aaa_enabled:
+            with concurrent.futures.ThreadPoolExecutor(5) as executor:
+                res = executor.map(run_comm, not_aaa_enabled)
+                all_res = [i for i in res]
+
+        return {'results':results,'no_connectivity':no_connectivity,'auth_failure':auth_failure,'unknown_error':unknown_error}
+# .....................................................................................................................
+
+    @staticmethod
+    def the_parser(x):
+        rau_v = ['R5B02','R5E01','R5E02']
+        if 'access refused' in x[2]:
+            return [x[0]]
+        else:
+            try:
+                licence_status = [line.split(':')[1].strip() for line in x[2].split('\n') if 'NE License Status:' in line]
+                licence_mode = [line.split(':')[1].strip() for line in x[2].split('\n') if 'NE License Mode:' in line]
+                rau_sw = [line.split(':')[1].strip() for line in x[2].split('\n') if 'RAU - active' in line]
+                sbl = [line.split(':')[-1].strip() for line in x[2].split('\n') if ('Active SBL' in line or 'BNS' in line) and not 'Active BNS' in line]
+                rau_state = ['Failed' for i in rau_sw if not i in rau_v]
+                rau_status = 'Passed' if not rau_state else 'Failed'
+                sbl_status = 'Failed' if not '5.4FP.5 LH 1.6FP.5_R33G124' in sbl[0] else 'Passed'
+                acceptance = 'Passed' if rau_status=='Passed' and sbl_status=='Passed' else 'Failed'
+    #             license = 'Passed' if licence_status.lower()=='ok' and licence_mode.lower()=='locked' else 'Failed'
+                #results.append((host,acceptance,rau_status,sbl_status,rau_sw,sbl[0].split(' - ')[0],'NO'))
+
+                return (x[0],acceptance,rau_status,sbl_status,rau_sw,sbl[0].split(' - ')[0],x[1],licence_status[0],licence_mode[0])
+            except:
+                if 'Invalid Command' in x[2]:
+                    sbl = [line.split('CXCR:')[-1].strip() for line in x[2].split('\n') if 'CXCR:' in line]
+                    sbl_status = 'Failed' if not '5.4FP.5 LH 1.6FP.5_R33G124' in sbl[0] else 'Passed'
+                    acceptance = 'Passed' if rau_status=='Passed' and sbl_status=='Passed' else 'Failed'
+                    return (x[0],acceptance,'unknown',sbl_status,'unknown',sbl[0].split(' - ')[0],x[1],'unknown','unknown')
+#                     print(f'{x[0]}: Error while parsing data. ....check the_parser')
+
+
+# data = Pymltn.get_inventory()
+# all_results = [Pymltn.the_parser(x) for x in data['results']]
+# f_results = [i for i in all_results if type(i)==tuple]
+# login_failure = [i[0] for i in all_results if type(i)==list]
+# # print(f_results)
+# # print(login_failure)
+
+# with pd.ExcelWriter(file_name) as writer:
+#     if f_results:
+#         pd.DataFrame(f_results, columns=cols).merge(pd.read_excel('lookup.xlsx'), how='left', on='IP').to_excel(writer, sheet_name='Main', index=False)
+#     if data['no_connectivity']:
+#         pd.DataFrame(data['no_connectivity'],columns=['IP']).merge(pd.read_excel('lookup.xlsx'), how='left', on='IP').to_excel(writer, sheet_name='no_connectivity', index=False)
+#     if data['unknown_error']:
+#         pd.DataFrame(data['unknown_error'],columns=['IP']).merge(pd.read_excel('lookup.xlsx'), how='left', on='IP').to_excel(writer, sheet_name='unknown_error', index=False)
+#     if data['auth_failure']:
+#         pd.DataFrame(data['auth_failure'],columns=['IP']).merge(pd.read_excel('lookup.xlsx'), how='left', on='IP').to_excel(writer, sheet_name='auth_failure', index=False)
+#     if login_failure:
+#         pd.DataFrame(login_failure,columns=['IP']).merge(pd.read_excel('lookup.xlsx'), how='left', on='IP').to_excel(writer, sheet_name='login_failure', index=False)
+
+
+# attachment = file_name
+# try:
+#     my_email_sender(attachment)
+# except:
+#     print('Problem sending email')
+# print('\nFinished!')
+# print(f'{round((time.perf_counter() - start),2)} Secs')

@@ -1,0 +1,149 @@
+#!/bin/bash
+
+log=_app.log
+folder=/var/log/apps/
+echo -e " Log name   \t      GET      \t      POST    \t   DELETE "
+echo -e "------------------------------------------------------------"
+
+for app in $(cat /tmp/assets/apps.txt)
+do
+    get_requests=$(cat $folder$app$log | grep "GET" | wc -l)
+    post_requests=$(cat $folder$app$log | grep "POST" | wc -l)
+    delete_requests=$(cat $folder$app$log | grep "DELETE" | wc -l)
+    echo -e " $app    \t ${get_requests}    \t    ${post_requests}   \t   ${delete_requests}"
+done
+
+
+#----------------------------------------------------------------------------
+
+for f in $(ls /home/bob/images2)
+do
+        if [[ $f = *jpeg ]]
+        then
+            cd /home/bob/images2
+            new_name = $(echo $f | sed 's/jpeg/jpg/g')
+            mv $f $new_name
+        fi
+done
+
+
+while true
+do
+    echo "1. Shutdown"
+    echo "1. Restart"
+    echo "2. Exit Menu"
+    read -p "Enter your choice: " choice
+
+    if [ $choice -eq 1 ]
+    then
+        shutdown
+    elif [ $choice -eq 2 ]
+    then
+        shutdown -r now
+    elif [ $choice -eq 3 ]
+    then
+        break
+    else
+        continue
+    fi
+done
+
+#-------------------------------------------------------------------------------------------
+if [ $# -ne 2 ]
+then
+    echo "Please call this script with TWO arguments (numbers) separated by space." 
+    echo "Example: script 3 5"
+    exit
+else
+    while true
+    do
+        echo "1. Add"
+        echo "2. Subtract"
+        echo "3. Multiply"
+        echo "4. Divide"
+        echo "5. Quit"
+        read -p "Enter your choice: " choice
+
+        if [ $choice -eq 5 ]
+        then
+            exit
+        elif [ $choice -eq 4 ]
+        then
+            ans=$("$1 / $2" | bc -l)
+            echo "Answer=$ans"
+            echo ""
+        elif [ $choice -eq 3 ]
+        then
+            echo "Answer=$(expr $1 \* $2)"
+            echo ""
+        elif [ $choice -eq 2 ]
+        then
+            echo "Answer=$(expr $1 - $2)"
+            echo ""
+        elif [ $choice -eq 1 ]
+        then
+            echo "Answer=$(expr $1 + $2)"
+            echo ""
+        else
+            continue
+        fi
+    done
+fi
+
+#-------------------------------------------------------------------------------------------
+
+color=$1
+red=`tput setaf 1`
+green=`tput setaf 2`
+reset=`tput sgr0`
+
+case $color in
+    red) echo "${red}this is red${reset}";;
+    green) echo "${green}this is green${reset}";;
+    *) echo "red and green are the only choices";;
+esac
+
+
+#-------------------------------------------------------------------
+
+function add(){
+  sum=$(( $1 + $2 ))
+  echo $sum
+}
+
+result=$(add 3 5)
+echo "The result is $result"
+
+#---------------------------------------------------------------------------
+
+launch_rocket(){
+#mission_name=$1
+  
+    mkdir $mission_name
+
+    rocket-add $mission_name
+
+    rocket-start-power $mission_name
+    rocket-internal-power $mission_name
+    rocket-start-sequence $mission_name
+    rocket-start-engine $mission_name
+    rocket-lift-off $mission_name
+
+    rocket_status=$(rocket-status $mission_name)
+
+    echo "The status of launch is $rocket_status"
+
+    if [ $rocket_status = "launching" ]
+    then
+        sleep 2
+        rocket_status=$(rocket-status $mission_name)
+    fi
+
+    if [ $rocket_status = "failed" ]
+    then
+        rocket-debug
+    fi
+}
+
+mission_name=$1
+launch_rocket mission_name
